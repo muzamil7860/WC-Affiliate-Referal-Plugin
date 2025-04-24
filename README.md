@@ -117,10 +117,10 @@ Shortcodes for referral link display.
 
 ## Demo Video 
 
-# First Step 
+First Step 
 https://www.loom.com/share/d2377c41ec3649c8b7fc62b9e0ebf671?sid=b11e3814-7c4e-4720-b505-7e9922f86c8b
 
-# Second Step
+Second Step
 https://www.loom.com/share/bf4f811a53b643209ba96e4fc13a3a03?sid=9602076b-02d7-439e-9f2e-7d5df61c2fa1
 
 ❓ FAQs
