@@ -369,13 +369,11 @@ function display_referral_link_on_account() {
     }
 }
 add_action('woocommerce_account_dashboard', 'display_referral_link_on_account', 15);
-
 //  Store referrer ID in session and cookie
 add_action('init', function () {
     if (isset($_GET['ref'])) {
         $referrer_id = absint($_GET['ref']);
 
-        // Prevent self-referral
         if (!is_user_logged_in() || $referrer_id !== get_current_user_id()) {
             WC()->session->set('referrer_id', $referrer_id);
             setcookie('wrc_referrer', $referrer_id, time() + WEEK_IN_SECONDS, COOKIEPATH, COOKIE_DOMAIN);
@@ -383,7 +381,7 @@ add_action('init', function () {
     }
 });
 
-//  Apply 10% referral discount ONLY if this user hasn't used it before
+// Apply 10% referral discount if first time
 add_action('woocommerce_cart_calculate_fees', function ($cart) {
     if (is_admin() || is_cart()) return;
 
@@ -392,20 +390,16 @@ add_action('woocommerce_cart_calculate_fees', function ($cart) {
 
     if (is_user_logged_in()) {
         $user_id = get_current_user_id();
-
-        //  Check if the CURRENT USER already used referral (not the referrer)
-        $has_used = get_user_meta($user_id, '_used_referral_discount', true);
-        if ($has_used) return;
+        if (get_user_meta($user_id, '_used_referral_discount', true)) return;
     } else {
         if (WC()->session->get('guest_used_referral_discount')) return;
     }
 
-    //  Apply 10% discount
     $discount = $cart->get_subtotal() * 0.10;
     $cart->add_fee(__('Referral Discount', 'your-textdomain'), -$discount);
 }, 10);
 
-//  On order create, log referral info + mark discount used
+// Give store credit to referrer & mark ref usage + email
 add_action('woocommerce_checkout_create_order', function ($order, $data) {
     $referrer_id = WC()->session->get('referrer_id') ?: (isset($_COOKIE['wrc_referrer']) ? absint($_COOKIE['wrc_referrer']) : null);
     if (!$referrer_id) return;
@@ -413,27 +407,55 @@ add_action('woocommerce_checkout_create_order', function ($order, $data) {
     $referrer_user = get_user_by('ID', $referrer_id);
     if ($referrer_user) {
         $referrer_name = $referrer_user->display_name;
+        $referrer_email = $referrer_user->user_email;
         $order->update_meta_data('_referrer_name', $referrer_name);
     }
 
-    // Save meta for current user: they used a referral discount, and who referred them
     if (is_user_logged_in()) {
         $user_id = get_current_user_id();
+        $current_user = wp_get_current_user();
 
-        //  Only mark discount used if not already marked
         if (!get_user_meta($user_id, '_used_referral_discount', true)) {
             update_user_meta($user_id, '_used_referral_discount', true);
             update_user_meta($user_id, 'wrc_referrer_used', $referrer_name ?? 'Unknown');
+
+            //  Give 20% store credit to referrer
+            $credit_amount = $order->get_subtotal() * 0.20;
+            $existing_credit = (float) get_user_meta($referrer_id, 'store_credit', true);
+            $new_credit = $existing_credit + $credit_amount;
+            update_user_meta($referrer_id, 'store_credit', $new_credit);
+
+            //  Email to Referrer (User A)
+            if (!empty($referrer_email)) {
+                $subject = '🎉 You earned $' . number_format($credit_amount, 2) . ' store credit!';
+                $message = 'Hi ' . esc_html($referrer_name) . ",<br><br>"
+                    . 'Good news! You earned $' . number_format($credit_amount, 2) . ' in store credit because <strong>' . esc_html($current_user->display_name) . '</strong> used your referral link and completed a purchase.<br><br>'
+                    . 'You can use your credit on your next order!<br><br>'
+                    . 'Thanks for spreading the word!<br>'
+                    . get_bloginfo('name');
+
+                wp_mail($referrer_email, $subject, $message, ['Content-Type: text/html']);
+            }
+
+            //  Email to User B
+            $user_b_email = $current_user->user_email;
+            $subject_b = '🎉 You saved 10% with your referral discount!';
+            $message_b = 'Hi ' . esc_html($current_user->display_name) . ",<br><br>"
+                . 'You just saved 10% on your purchase using a referral code from <strong>' . esc_html($referrer_name) . '</strong>.<br><br>'
+                . 'Enjoy your savings and don’t forget you can now refer your own friends too!<br><br>'
+                . 'Thanks for shopping with us!<br>'
+                . get_bloginfo('name');
+
+            wp_mail($user_b_email, $subject_b, $message_b, ['Content-Type: text/html']);
         }
     } else {
         WC()->session->set('guest_used_referral_discount', true);
     }
 
-    // Clean up session
     WC()->session->__unset('referrer_id');
 }, 10, 2);
 
-// Show "Referred By" in admin panel
+//  Show Referred By in admin panel
 add_action('woocommerce_admin_order_data_after_order_details', function ($order) {
     $referrer = $order->get_meta('_referrer_name');
     if ($referrer) {
@@ -441,12 +463,48 @@ add_action('woocommerce_admin_order_data_after_order_details', function ($order)
     }
 });
 
-// Show "Referred By" in My Account
+// Show Referred By + Store Credit in My Account
 add_action('woocommerce_before_my_account', function () {
-    if (is_user_logged_in()) {
-        $referrer = get_user_meta(get_current_user_id(), 'wrc_referrer_used', true);
-        if ($referrer) {
-            echo '<p><strong>Referred By:</strong> ' . esc_html($referrer) . '</p>';
-        }
+    if (!is_user_logged_in()) return;
+
+    $referrer = get_user_meta(get_current_user_id(), 'wrc_referrer_used', true);
+    if ($referrer) {
+        echo '<p><strong>Referred By:</strong> ' . esc_html($referrer) . '</p>';
+    }
+
+    $credit = (float) get_user_meta(get_current_user_id(), 'store_credit', true);
+    if ($credit > 0) {
+        // echo '<p><strong>Your Store Credit:</strong> $' . number_format($credit, 2) . '</p>';
     }
 });
+
+// Automatically apply store credit on checkout
+add_action('woocommerce_cart_calculate_fees', function ($cart) {
+    if (!is_user_logged_in()) return;
+
+    $user_id = get_current_user_id();
+    $credit = (float) get_user_meta($user_id, 'store_credit', true);
+    if ($credit <= 0) return;
+
+    $cart_total = $cart->get_subtotal();
+    $apply_credit = min($credit, $cart_total);
+
+    if ($apply_credit > 0) {
+        $cart->add_fee(__('Store Credit', 'your-textdomain'), -$apply_credit);
+        WC()->session->set('store_credit_used', $apply_credit);
+    }
+}, 20);
+
+// After order is placed, reduce used store credit
+add_action('woocommerce_checkout_order_processed', function ($order_id) {
+    if (!is_user_logged_in()) return;
+
+    $user_id = get_current_user_id();
+    $used_credit = WC()->session->get('store_credit_used');
+    if ($used_credit) {
+        $existing = (float) get_user_meta($user_id, 'store_credit', true);
+        $new = max(0, $existing - $used_credit);
+        update_user_meta($user_id, 'store_credit', $new);
+        WC()->session->__unset('store_credit_used');
+    }
+}, 20);
