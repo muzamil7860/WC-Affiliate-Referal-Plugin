@@ -115,6 +115,9 @@ Ability to disable auto-apply of credit at checkout.
 
 Shortcodes for referral link display.
 
+## Demo Video 
+https://www.loom.com/share/bf4f811a53b643209ba96e4fc13a3a03?sid=9602076b-02d7-439e-9f2e-7d5df61c2fa1
+
 ❓ FAQs
 Q: Can users stack referral and store credit?
 A: Currently, referral-based discounts are applied from the referrer’s credit pool. Buyers use their own store credit at checkout.
