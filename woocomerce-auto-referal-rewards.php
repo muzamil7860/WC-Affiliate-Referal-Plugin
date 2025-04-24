@@ -2,7 +2,7 @@
 /**
  * Plugin Name: WooCommerce Referral & Store Credit
  * Description: Grants 2% store credit on purchases, manages referrals, deducts used credits properly, and ensures email notifications.
- * Version: 1.0.0
+ * Version: 1.1.0
  * Author: Muzamil Attiq
  * Text Domain: woo-referral-credit
  */
